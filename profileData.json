@@ -1,0 +1,10 @@
+{
+    "token":"0",
+    "groupsData":[
+        {
+            "groupName":"test",
+            "groupID":100000001,
+            "albumID":100000002
+        }
+    ]
+}
