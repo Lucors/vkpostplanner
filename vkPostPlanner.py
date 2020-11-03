@@ -4,7 +4,7 @@ import os
 import sys
 import json
 import time
-import datetime
+import random
 from threading import Thread
 #WEB
 import vk_api
@@ -14,14 +14,12 @@ from requests.exceptions import HTTPError
 #GUI
 from PySide2.QtWidgets import QApplication, QMainWindow, QWidget,  QTabWidget
 from PySide2.QtWidgets import QGridLayout, QLabel, QPushButton, QDialog, QFrame
-from PySide2.QtWidgets import QComboBox, QDateEdit, QLineEdit, QFileDialog
-from PySide2.QtCore import Qt, QDate, QObject, Signal, Slot
+from PySide2.QtWidgets import QComboBox, QDateEdit, QLineEdit, QFileDialog, QCheckBox
+from PySide2.QtCore import Qt, QDate, QTime, QObject, Signal, Slot
 from PySide2.QtGui import QIcon
-
 
 #Глобальные переменные
 vkConnector = None
-
 
 class ConsoleIO:
 	@staticmethod
@@ -34,7 +32,7 @@ class ConsoleIO:
 		
 	@staticmethod
 	def log(msg, prefix="<->"):
-		output = datetime.datetime.today().strftime("%m.%d %H:%M:%S")
+		output = QTime.currentTime().toString()
 		output += ' ' + prefix + ' ' + msg
 		print(output)
 
@@ -101,11 +99,7 @@ class AutoPlanner(QWidget, QObject):
 		hourSelectorLbl = QLabel("Время начала:")
 		self.mainLayout.addWidget(hourSelectorLbl, 3, 0)
 		self.hourSelector = QComboBox()
-		hourStart = datetime.datetime.now().hour+1
-		if (hourStart > 23 or hourStart < 8):
-			hourStart = 8
-		for hour in range(hourStart, 23):
-			self.hourSelector.addItem(str(hour))
+		self.__initHourSelector(self.publishDateField.date())
 		self.mainLayout.addWidget(self.hourSelector, 4, 0)
 
 		periodSelectorLbl = QLabel("Период планировщика:")
@@ -115,26 +109,46 @@ class AutoPlanner(QWidget, QObject):
 			self.periodSelector.addItem("Раз в " + str(period) + "ч.")
 		self.mainLayout.addWidget(self.periodSelector, 4, 1, 1, 2)
 
+		self.marketBox = QCheckBox("Постить товары")
+		self.mainLayout.addWidget(self.marketBox, 5, 0, 1, 3)
+
 		filePathLbl = QLabel("Путь к файлам:")
-		self.mainLayout.addWidget(filePathLbl, 5, 0)
+		self.mainLayout.addWidget(filePathLbl, 6, 0)
 		self.filesPathLine = QLineEdit()
-		self.mainLayout.addWidget(self.filesPathLine, 6, 0, 1, 2)
+		self.mainLayout.addWidget(self.filesPathLine, 7, 0, 1, 2)
 		self.filePathSelector = QPushButton("...") 
-		self.mainLayout.addWidget(self.filePathSelector, 6, 2)
+		self.mainLayout.addWidget(self.filePathSelector, 7, 2)
 
 		hLine = QFrame()
 		hLine.setFrameShape(QFrame.HLine)
 		hLine.setFrameShadow(QFrame.Sunken)
-		self.mainLayout.addWidget(hLine, 7, 0, 1, 3)
+		self.mainLayout.addWidget(hLine, 8, 0, 1, 3)
 
 		self.locked = False
 		self.lockButton = QPushButton("Заблокировать")
-		self.mainLayout.addWidget(self.lockButton, 8, 0)
+		self.mainLayout.addWidget(self.lockButton, 9, 0)
 		self.startButton = QPushButton("Начать")
 		self.startButton.setEnabled(False)
-		self.mainLayout.addWidget(self.startButton, 8, 2)
+		self.mainLayout.addWidget(self.startButton, 9, 2)
+
+	def __initHourSelector(self, date):
+		self.hourSelector.clear()
+		if (date == QDate.currentDate()):
+			hourStart = QTime.currentTime().hour()+1
+			if (hourStart > 22 or hourStart < 8):
+				hourStart = 8
+				self.publishDateField.setMinimumDate(QDate.currentDate().addDays(1))
+		else:
+			hourStart = 8
+		for hour in range(hourStart, 23):
+			self.hourSelector.addItem(str(hour))
 
 	def __initLogic__(self):
+		if (self.groupSelector.count() > 0):
+			self.groupSelector.setCurrentIndex(0)
+			self.settingGroupData(0)
+		self.publishDateField.dateChanged.connect(self.__initHourSelector)
+		self.marketBox.stateChanged.connect(self.__toogleFilePathLock)
 		self.filePathSelector.clicked.connect(self.__defPath)
 		self.lockButton.clicked.connect(self.__toogleLock)
 		self.groupSelector.highlighted.connect(self.settingGroupData)
@@ -142,9 +156,14 @@ class AutoPlanner(QWidget, QObject):
 		self.autoPlanningEnded.connect(self.__endAutoPlanning)
 
 	def __defPath(self):
-		filesPath = QFileDialog.getExistingDirectory(self, "Выберите папку с файлами", "", 
-                                       QFileDialog.ShowDirsOnly)
+		filesPath = QFileDialog.getExistingDirectory(self, "Выберите папку с файлами", "", QFileDialog.ShowDirsOnly)
 		self.filesPathLine.setText(filesPath)
+
+	def getCurrentGroupTitle(self, tabIndex=0):
+		if (self.groupSelector.count() > 0):
+			return self.profileData["groupsData"][self.groupSelector.currentIndex()]["groupName"]
+		else:
+			return ("Неопр. " + str(tabIndex))
 
 	def settingGroupData(self, index):
 		self.lGroupID.setText(str(self.profileData["groupsData"][index]["groupID"]))
@@ -161,8 +180,8 @@ class AutoPlanner(QWidget, QObject):
 			self.hourSelector.setEnabled(True)
 			self.periodSelector.setEnabled(True)
 			self.periodSelector.setEnabled(True)
-			self.filesPathLine.setEnabled(True)
-			self.filePathSelector.setEnabled(True)
+			self.marketBox.setEnabled(True)
+			self.__toogleFilePathLock()
 			self.startButton.setEnabled(False)
 			self.locked = False
 		else:
@@ -174,17 +193,32 @@ class AutoPlanner(QWidget, QObject):
 			self.hourSelector.setEnabled(False)
 			self.periodSelector.setEnabled(False)
 			self.periodSelector.setEnabled(False)
-			self.filesPathLine.setEnabled(False)
-			self.filePathSelector.setEnabled(False)
+			self.marketBox.setEnabled(False)
+			self.__toogleFilePathLock()
 			self.startButton.setEnabled(True)
 			self.locked = True
+
+	def __toogleFilePathLock(self):
+		if (self.marketBox.checkState()):
+			self.filesPathLine.setEnabled(False)
+			self.filePathSelector.setEnabled(False)
+		else:
+			self.filesPathLine.setEnabled(True)
+			self.filePathSelector.setEnabled(True)
 
 	def __startAutoPlanning(self):
 		self.startButton.setEnabled(False)
 		self.lockButton.setEnabled(False)
-		thhredAutoPlanning = Thread(target=self.__AutoPlanningBody)
-		thhredAutoPlanning.start()
-		
+		if (self.marketBox.checkState()):
+			threadAutoPlanning = Thread(target=self.__AutoPlanningBodyMarket)
+		else:
+			threadAutoPlanning = Thread(target=self.__AutoPlanningBody)
+		threadAutoPlanning.start()
+
+	def __endAutoPlanning(self):
+		self.lockButton.setEnabled(True)
+		self.__toogleLock()
+
 	def __AutoPlanningBody(self):
 		global vkConnector	
 		try:
@@ -204,8 +238,7 @@ class AutoPlanner(QWidget, QObject):
 					groupID = self.lGroupID.text()
 					photoID = (vkConnector.vkUpload.photo(photos = photoPath, album_id = albumID, group_id = groupID))[0]["id"]
 					
-					preUnixDate = self.publishDateField.date().toString(Qt.ISODate) + ' ' + str(publishHour) + ':00:00'
-					unixDate = int(time.mktime(time.strptime(preUnixDate, '%Y-%m-%d %H:%M:%S')))
+					unixDate = self.toUnixDate(publishHour)
 					postAttachment = "photo-" + groupID + "_" + str(photoID)
 					
 					postMessage = ""
@@ -219,21 +252,66 @@ class AutoPlanner(QWidget, QObject):
 					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = ('-' + groupID), 
 											from_group = 1, attachments = postAttachment, message = postMessage)
 
-					if publishHour < 22:
-						publishHour = publishHour + publishPeriod
-					elif publishHour >= 22:
-						self.publishDateField.setDate(self.publishDateField.date().addDays(1))
-						publishHour = 8
+					publishHour = self.__checkTime(publishHour, publishPeriod)
 		except Exception as ex:
 			ConsoleIO().error("Ошибка автопланировщика: "  + str(ex))
 		finally:
 			ConsoleIO().log("Планировщик окончил работу")
 			self.autoPlanningEnded.emit() 
 
-	def __endAutoPlanning(self):
-		self.lockButton.setEnabled(True)
-		self.__toogleLock()
+	def __AutoPlanningBodyMarket(self):
+		global vkConnector	
+		try:
+			publishHour = int(self.hourSelector.currentText())
+			publishPeriod = self.periodSelector.currentIndex()+1
+			groupID = self.lGroupID.text()
+			products = vkConnector.vk.market.get(owner_id = ('-' + groupID))
 
+			msgProductAccount = self.profileData["productsMessages"]["account"]
+			msgProductOther = self.profileData["productsMessages"]["other"]
+			if ("productsMessages" in self.profileData["groupsData"][self.groupSelector.currentIndex()]):
+				if ("account" in self.profileData["groupsData"][self.groupSelector.currentIndex()]["productsMessages"]):
+					msgProductAccount = self.profileData["groupsData"][self.groupSelector.currentIndex()]["productsMessages"]["account"]
+				if ("other" in self.profileData["groupsData"][self.groupSelector.currentIndex()]["productsMessages"]):
+					msgProductOther = self.profileData["groupsData"][self.groupSelector.currentIndex()]["productsMessages"]["other"]
+
+			random.shuffle(products["items"])
+			for item in products["items"]:
+				if (not item["availability"]):
+					unixDate = self.toUnixDate(publishHour)
+					postAttachment = "market-" + groupID + "_" + str(item["id"])
+
+					ConsoleIO().log("Текущий товар: " + item["title"])
+					if ("аккаунт" in item["title"].lower()):
+						postMessage = msgProductAccount.format(title=item["title"], price=str(item["price"]["text"]))
+					else:
+						postMessage = msgProductOther.format(title=item["title"], price=str(item["price"]["text"]))
+
+					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = ('-' + groupID), 
+											from_group = 1, attachments = postAttachment, message = postMessage)
+
+					publishHour = self.__checkTime(publishHour, publishPeriod)
+		except Exception as ex:
+			ConsoleIO().error("Ошибка автопланировщика: "  + str(ex))
+		finally:
+			ConsoleIO().log("Планировщик окончил работу")
+			self.autoPlanningEnded.emit() 
+
+	def toUnixDate(self, currentTime):
+		preUnixDate = self.publishDateField.date().toString(Qt.ISODate) + ' ' + str(currentTime) + ':00:00'
+		return int(time.mktime(time.strptime(preUnixDate, '%Y-%m-%d %H:%M:%S')))
+
+	def __checkTime(self, currentTime, currentPeriod):
+		if currentTime < 22:
+			currentTime = currentTime + currentPeriod
+		else:
+			self.publishDateField.setDate(self.publishDateField.date().addDays(1))
+			if (int(self.hourSelector.currentText()) % 2):
+				currentTime = 8
+			else:
+				currentTime = 9
+			ConsoleIO().log("Новый день. Начинаю с: " + str(currentTime))
+		return currentTime
 
 class TokenEditor(QDialog, QObject):
 	
@@ -289,55 +367,68 @@ class GroupsEditor(QDialog, QObject):
 
 		groupNamelbl = QLabel("Группа:")
 		layout.addWidget(groupNamelbl, 2, 0)
-		self.groupNameCombo = QComboBox()
-		for group in self.profileData["groupsData"]:
-			self.groupNameCombo.addItem(group["groupName"])
-		layout.addWidget(self.groupNameCombo, 2, 1, 1, 2)
+
+		self.groupSelector = QComboBox()
+		for groupIndex in range(len(self.profileData["groupsData"])):
+			self.groupSelector.addItem(str(groupIndex))
+		layout.addWidget(self.groupSelector, 2, 1, 1, 2)
+
+		groupNamelbl = QLabel("Название Группы:")
+		layout.addWidget(groupNamelbl, 3, 0)
+		self.groupNameLine = QLineEdit()
+		layout.addWidget(self.groupNameLine, 3, 1, 1, 2)
 
 		groupIDlbl = QLabel("ID Группы:")
-		layout.addWidget(groupIDlbl, 3, 0)
+		layout.addWidget(groupIDlbl, 4, 0)
 		self.groupIDLine = QLineEdit()
-		layout.addWidget(self.groupIDLine, 3, 1, 1, 2)
+		layout.addWidget(self.groupIDLine, 4, 1, 1, 2)
 
 		albumIDlbl = QLabel("ID Альбома:")
-		layout.addWidget(albumIDlbl, 4, 0)
+		layout.addWidget(albumIDlbl, 5, 0)
 		self.albumIDLine = QLineEdit()
-		layout.addWidget(self.albumIDLine, 4, 1, 1, 2)
+		layout.addWidget(self.albumIDLine, 5, 1, 1, 2)
 
 		self.okBoomer = QPushButton("Ок")
-		layout.addWidget(self.okBoomer, 5, 0, 1, 3)
+		layout.addWidget(self.okBoomer, 6, 0, 1, 3)
 		
 	def __initLogic__(self):
-		self.addNewGroupButton.clicked.connect(self.__addNewGroupFA)
-		self.groupNameCombo.highlighted.connect(self.__setGroupEditForm)
-		self.groupIDLine.editingFinished.connect(self.__editGroupIDFA)
-		self.albumIDLine.editingFinished.connect(self.__editAlbumIDFA)
+		if (self.groupSelector.count() > 0):
+			self.groupSelector.setCurrentIndex(0)
+			self.__setGroupEditForm(0)
+		self.addNewGroupButton.clicked.connect(self.__addNewGroup)
+		self.groupSelector.highlighted.connect(self.__setGroupEditForm)
+		self.groupNameLine.editingFinished.connect(self.__editGroupName)
+		self.groupIDLine.editingFinished.connect(self.__editGroupID)
+		self.albumIDLine.editingFinished.connect(self.__editAlbumID)
 		self.okBoomer.clicked.connect(self.accept)
 	
-	def __addNewGroupFA(self):
+	def __addNewGroup(self):
 		if (self.addNewGroupName.text()):
 			self.profileData["groupsData"].append({})
 			self.profileData["groupsData"][-1]["groupName"] = self.addNewGroupName.text()
 			self.profileData["groupsData"][-1]["groupID"] = 123456789
 			self.profileData["groupsData"][-1]["albumID"] = 123456789
-			self.groupNameCombo.addItem(self.profileData["groupsData"][-1]["groupName"])
+			self.groupSelector.addItem(self.profileData["groupsData"][-1]["groupName"])
 
 	def __setGroupEditForm(self, index):
+		self.groupNameLine.setText(str(self.profileData["groupsData"][index]["groupName"]))
 		self.groupIDLine.setText(str(self.profileData["groupsData"][index]["groupID"]))
 		self.albumIDLine.setText(str(self.profileData["groupsData"][index]["albumID"]))
 
-	def __editGroupIDFA(self):
-		if (self.groupIDLine.text()):
-			self.profileData["groupsData"][self.groupNameCombo.currentIndex()]["groupID"] = int(self.groupIDLine.text())
+	def __editGroupName(self):
+		if (self.groupNameLine.text()):
+			self.profileData["groupsData"][self.groupSelector.currentIndex()]["groupName"] = self.groupNameLine.text()
 
-	def __editAlbumIDFA(self):
+	def __editGroupID(self):
+		if (self.groupIDLine.text()):
+			self.profileData["groupsData"][self.groupSelector.currentIndex()]["groupID"] = int(self.groupIDLine.text())
+
+	def __editAlbumID(self):
 		if (self.albumIDLine.text()):
-			self.profileData["groupsData"][self.groupNameCombo.currentIndex()]["albumID"] = int(self.albumIDLine.text())	
+			self.profileData["groupsData"][self.groupSelector.currentIndex()]["albumID"] = int(self.albumIDLine.text())	
 		
 	def exec_(self):
 		super().exec_()
-		self.__editGroupIDFA()
-		self.__editAlbumIDFA()
 		
 
 class Program(QMainWindow):
@@ -371,7 +462,7 @@ class Program(QMainWindow):
 	def addPlanner(self):
 		index = self.tabs.count()
 		planner = AutoPlanner(self.profileData)
-		self.tabs.insertTab(index, planner, "Неопр. " + str(index))
+		self.tabs.insertTab(index, planner, planner.getCurrentGroupTitle(tabIndex=index))
 		planner.groupChanged.connect(self.setPlannerTabTitle)
 		self.tabs.setCurrentIndex(index)
 
@@ -396,7 +487,7 @@ class Program(QMainWindow):
 	def writeProfileData(self):
 		ConsoleIO().log("Запись данных профиля")
 		profileDataFile = open('profileData.json', 'w', encoding = "utf-8")
-		profileDataFile.write(json.dumps(self.profileData, indent = 4, separators = (',', ':')))
+		profileDataFile.write(json.dumps(self.profileData, ensure_ascii=False, indent = 4, separators = (',', ':')))
 		profileDataFile.close()
 	
 	def editToken(self):
@@ -423,6 +514,5 @@ class Program(QMainWindow):
 
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
-	#app.setStyle("Windows")
 	program = Program()
 	sys.exit(app.exec_())
