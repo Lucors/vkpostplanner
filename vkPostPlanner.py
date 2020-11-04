@@ -137,7 +137,8 @@ class AutoPlanner(QWidget, QObject):
 			hourStart = QTime.currentTime().hour()+1
 			if (hourStart > 22 or hourStart < 8):
 				hourStart = 8
-				self.publishDateField.setMinimumDate(QDate.currentDate().addDays(1))
+				if (hourStart > 22):
+					self.publishDateField.setMinimumDate(QDate.currentDate().addDays(1))
 		else:
 			hourStart = 8
 		for hour in range(hourStart, 23):
@@ -213,6 +214,7 @@ class AutoPlanner(QWidget, QObject):
 			threadAutoPlanning = Thread(target=self.__AutoPlanningBodyMarket)
 		else:
 			threadAutoPlanning = Thread(target=self.__AutoPlanningBody)
+		ConsoleIO().log("Планировщик начал работу")
 		threadAutoPlanning.start()
 
 	def __endAutoPlanning(self):
@@ -307,9 +309,9 @@ class AutoPlanner(QWidget, QObject):
 		else:
 			self.publishDateField.setDate(self.publishDateField.date().addDays(1))
 			if (int(self.hourSelector.currentText()) % 2):
-				currentTime = 8
-			else:
 				currentTime = 9
+			else:
+				currentTime = 8
 			ConsoleIO().log("Новый день. Начинаю с: " + str(currentTime))
 		return currentTime
 
