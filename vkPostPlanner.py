@@ -8,9 +8,9 @@ import random
 from threading import Thread
 #WEB
 import vk_api
-from vk_api.utils import get_random_id
-from vk_api.longpoll import VkLongPoll, VkEventType
-from requests.exceptions import HTTPError
+#from vk_api.utils import get_random_id
+#from vk_api.longpoll import VkLongPoll, VkEventType
+#from requests.exceptions import HTTPError
 #GUI
 from PySide2.QtWidgets import QApplication, QMainWindow, QWidget,  QTabWidget
 from PySide2.QtWidgets import QGridLayout, QLabel, QPushButton, QDialog, QFrame
