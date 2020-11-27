@@ -31,10 +31,10 @@ class ConsoleIO:
 		ConsoleIO().log(msg, prefix="<?>")
 		
 	@staticmethod
-	def log(msg, prefix="<->"):
-		output = QTime.currentTime().toString()
-		output += ' ' + prefix + ' ' + msg
-		print(output)
+	def log(msg, prefix="<->", start="%time%", end = "\n"):
+		if (start == "%time%"):
+			start = QTime.currentTime().toString()
+		print(f"{start} {prefix} {msg}", end=end)
 
 
 class VkConnector():
@@ -49,7 +49,7 @@ class VkConnector():
 			self.vk = self.vkSession.get_api()
 			self.vkUpload = vk_api.VkUpload(self.vk)
 		except Exception as ex:
-			ConsoleIO().error("Ошибка подключение к VK: "  + str(ex))
+			ConsoleIO().error(f"Ошибка подключение к VK: {str(ex)}")
 			sys.exit(1)
 
 
@@ -106,7 +106,7 @@ class AutoPlanner(QWidget, QObject):
 		self.mainLayout.addWidget(periodSelectorLbl, 3, 1)
 		self.periodSelector = QComboBox()
 		for period in range(1, 4):
-			self.periodSelector.addItem("Раз в " + str(period) + "ч.")
+			self.periodSelector.addItem(f"Раз в {str(period)}ч.")
 		self.mainLayout.addWidget(self.periodSelector, 4, 1, 1, 2)
 
 		self.marketBox = QCheckBox("Постить товары")
@@ -164,7 +164,7 @@ class AutoPlanner(QWidget, QObject):
 		if (self.groupSelector.count() > 0):
 			return self.profileData["groupsData"][self.groupSelector.currentIndex()]["groupName"]
 		else:
-			return ("Неопр. " + str(tabIndex))
+			return (f"Неопр. {str(tabIndex)}")
 
 	def settingGroupData(self, index):
 		self.lGroupID.setText(str(self.profileData["groupsData"][index]["groupID"]))
@@ -225,38 +225,43 @@ class AutoPlanner(QWidget, QObject):
 		global vkConnector	
 		try:
 #Код Андрея (измененный)
-			publishHour = int(self.hourSelector.currentText())
+			self.startHour = int(self.hourSelector.currentText())
+			publishHour = self.startHour
 			publishPeriod = self.periodSelector.currentIndex()+1
 			path = self.filesPathLine.text()
 			if (path[-1] == '\\' or path[-1] != '/'):
 				path += '/'
-			ConsoleIO().log("Каталог: " + path)
+			ConsoleIO().log(f"Каталог: {path}")
 			files = os.listdir(path)
 			for filename in files:
 				if filename.endswith('.png') or filename.endswith('.jpg') or filename.endswith('.jpeg'):
-					ConsoleIO().log("Текущий файл: " + filename)
+					ConsoleIO().log(f"Текущий файл: {filename}")
 					photoPath = path + filename
 					albumID = self.lAlbumID.text()
 					groupID = self.lGroupID.text()
 					photoID = (vkConnector.vkUpload.photo(photos = photoPath, album_id = albumID, group_id = groupID))[0]["id"]
 					
 					unixDate = self.toUnixDate(publishHour)
-					postAttachment = "photo-" + groupID + "_" + str(photoID)
+					postAttachment = f"photo-{groupID}_{str(photoID)}"
 					
 					postMessage = ""
 					potentialMessageFile = filename[0:filename.rfind(".")] + ".desc"
 					if (potentialMessageFile in files):
-						ConsoleIO().log("Обнаружен файл описания поста: " + potentialMessageFile)
+						ConsoleIO().log(f"\n\tОбнаружен файл описания поста: {potentialMessageFile}", start="")
 						messageFile = open(path + potentialMessageFile, 'r', encoding = "utf-8")
 						postMessage = messageFile.read()
 						messageFile.close()
 						
-					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = ('-' + groupID), 
+					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = (f"-{groupID}"), 
 											from_group = 1, attachments = postAttachment, message = postMessage)
-
+					if (potentialMessageFile in files):
+						ConsoleIO().log(f"Пост -- ОК ({getCurrentDatetime(publishHour)})", start="")
+					else:
+						ConsoleIO().log(f" -- ОК ({getCurrentDatetime(publishHour)})", start="")
 					publishHour = self.__checkTime(publishHour, publishPeriod)
+			self.__selectLastHour(publishHour)
 		except Exception as ex:
-			ConsoleIO().error("Ошибка автопланировщика: "  + str(ex))
+			ConsoleIO().error(f"\nОшибка автопланировщика: {str(ex)}")
 		finally:
 			ConsoleIO().log("Планировщик окончил работу")
 			self.autoPlanningEnded.emit() 
@@ -264,10 +269,11 @@ class AutoPlanner(QWidget, QObject):
 	def __AutoPlanningBodyMarket(self):
 		global vkConnector	
 		try:
-			publishHour = int(self.hourSelector.currentText())
+			self.startHour = int(self.hourSelector.currentText())
+			publishHour = self.startHour
 			publishPeriod = self.periodSelector.currentIndex()+1
 			groupID = self.lGroupID.text()
-			products = vkConnector.vk.market.get(owner_id = ('-' + groupID))
+			products = vkConnector.vk.market.get(owner_id = (f"-{groupID}"))
 
 			msgProductAccount = self.profileData["productsMessages"]["account"]
 			msgProductOther = self.profileData["productsMessages"]["other"]
@@ -281,39 +287,48 @@ class AutoPlanner(QWidget, QObject):
 			for item in products["items"]:
 				if (not item["availability"]):
 					unixDate = self.toUnixDate(publishHour)
-					postAttachment = "market-" + groupID + "_" + str(item["id"])
+					postAttachment = f"market-{groupID}_{str(item['id'])}"
 
-					ConsoleIO().log("Текущий товар: " + item["title"])
+					ConsoleIO().log(f"Текущий товар: {item['title']}", end="")
 					if ("аккаунт" in item["title"].lower()):
 						postMessage = msgProductAccount.format(title=item["title"], price=str(item["price"]["text"]))
 					else:
 						postMessage = msgProductOther.format(title=item["title"], price=str(item["price"]["text"]))
 
-					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = ('-' + groupID), 
+					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = (f"-{groupID}"), 
 											from_group = 1, attachments = postAttachment, message = postMessage)
-
+					ConsoleIO().log(f" -- ОК [{getCurrentDatetime(publishHour)}]", start="")
 					publishHour = self.__checkTime(publishHour, publishPeriod)
+			self.__selectLastHour(publishHour)
 		except Exception as ex:
-			ConsoleIO().error("Ошибка автопланировщика: "  + str(ex))
+			ConsoleIO().error(f"\nОшибка автопланировщика: {str(ex)}")
 		finally:
 			ConsoleIO().log("Планировщик окончил работу")
 			self.autoPlanningEnded.emit() 
 
 	def toUnixDate(self, currentTime):
-		preUnixDate = self.publishDateField.date().toString(Qt.ISODate) + ' ' + str(currentTime) + ':00:00'
+		preUnixDate = getCurrentDatetime(currentTime)
 		return int(time.mktime(time.strptime(preUnixDate, '%Y-%m-%d %H:%M:%S')))
+
+	def getCurrentDatetime(self, currentTime):
+		return (f"{self.publishDateField.date().toString(Qt.ISODate)} {str(currentTime)}:00:00")
 
 	def __checkTime(self, currentTime, currentPeriod):
 		if currentTime < 22:
 			currentTime = currentTime + currentPeriod
 		else:
 			self.publishDateField.setDate(self.publishDateField.date().addDays(1))
-			if (int(self.hourSelector.currentText()) % 2):
+			if (self.startHour % 2):
 				currentTime = 9
 			else:
 				currentTime = 8
-			ConsoleIO().log("Новый день. Начинаю с: " + str(currentTime))
+			ConsoleIO().log(f"Новый день. Начинаю с: {str(currentTime)}")
 		return currentTime
+
+	def __selectLastHour(self, currentTime):
+		index = self.hourSelector.findText(str(currentTime))
+		if (index > -1):
+			self.hourSelector.setCurrentIndex(index)
 
 class TokenEditor(QDialog, QObject):
 	
@@ -450,16 +465,16 @@ class Program(QMainWindow):
 		self.addTabButton = QPushButton("+")
 		self.tabs.setCornerWidget(self.addTabButton, Qt.TopRightCorner)
 		self.tabs.setTabsClosable(True)
-		self.actionMenu = self.menuBar().addMenu("Действия");
+		self.actionMenu = self.menuBar().addMenu("Действия")
 		self.addPlanner()
 		self.setCentralWidget(self.tabs)
 		
 	def __initLogic__(self):
 		self.addTabButton.clicked.connect(self.addPlanner)
 		self.tabs.tabCloseRequested.connect(self.killPlanner)
-		self.actionMenu.addAction("Изменить токен", self.editToken);
-		self.actionMenu.addAction("Изменить группы", self.editGroups);
-		self.actionMenu.addAction("Перезагрузить профиль", self.reloadProfileData);
+		self.actionMenu.addAction("Изменить токен", self.editToken)
+		self.actionMenu.addAction("Изменить группы", self.editGroups)
+		self.actionMenu.addAction("Перезагрузить профиль", self.reloadProfileData)
 
 	def addPlanner(self):
 		index = self.tabs.count()
