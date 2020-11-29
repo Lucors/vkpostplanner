@@ -255,9 +255,9 @@ class AutoPlanner(QWidget, QObject):
 					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = (f"-{groupID}"), 
 											from_group = 1, attachments = postAttachment, message = postMessage)
 					if (potentialMessageFile in files):
-						ConsoleIO().log(f"Пост -- ОК ({getCurrentDatetime(publishHour)})", start="")
+						ConsoleIO().log(f"Пост -- ОК ({self.getCurrentDatetime(publishHour)})", start="")
 					else:
-						ConsoleIO().log(f" -- ОК ({getCurrentDatetime(publishHour)})", start="")
+						ConsoleIO().log(f" -- ОК ({self.getCurrentDatetime(publishHour)})", start="")
 					publishHour = self.__checkTime(publishHour, publishPeriod)
 			self.__selectLastHour(publishHour)
 		except Exception as ex:
@@ -297,7 +297,7 @@ class AutoPlanner(QWidget, QObject):
 
 					vkConnector.vk.wall.post(publish_date = unixDate, owner_id = (f"-{groupID}"), 
 											from_group = 1, attachments = postAttachment, message = postMessage)
-					ConsoleIO().log(f" -- ОК [{getCurrentDatetime(publishHour)}]", start="")
+					ConsoleIO().log(f" -- ОК [{self.getCurrentDatetime(publishHour)}]", start="")
 					publishHour = self.__checkTime(publishHour, publishPeriod)
 			self.__selectLastHour(publishHour)
 		except Exception as ex:
@@ -307,7 +307,7 @@ class AutoPlanner(QWidget, QObject):
 			self.autoPlanningEnded.emit() 
 
 	def toUnixDate(self, currentTime):
-		preUnixDate = getCurrentDatetime(currentTime)
+		preUnixDate = self.getCurrentDatetime(currentTime)
 		return int(time.mktime(time.strptime(preUnixDate, '%Y-%m-%d %H:%M:%S')))
 
 	def getCurrentDatetime(self, currentTime):
