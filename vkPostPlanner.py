@@ -452,6 +452,14 @@ class Program(QMainWindow):
 
 	def __init__(self):
 		super().__init__()
+		self.setWindowFlags(
+			Qt.Window |
+			Qt.CustomizeWindowHint |
+			Qt.WindowTitleHint |
+			Qt.WindowCloseButtonHint |
+			Qt.WindowMinimizeButtonHint |
+			Qt.WindowStaysOnTopHint
+		)
 		self.setWindowTitle("Автопланировщик постов ВК")
 		self.setWindowIcon(QIcon("logo.png"))
 		self.readProfileData()
